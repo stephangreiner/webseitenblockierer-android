@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Webseitenblockierer</string>
+    <string name="accessibility_service_label">Webseitenblockierer</string>
+    <string name="accessibility_service_description">Erkennt, wenn eine gesperrte Webseite im Browser geöffnet wird, und blendet die Sperre ein.</string>
+
+    <string name="blocked_sites_title">Gesperrte Seiten</string>
+    <string name="add_site_hint">z. B. youtube.com</string>
+    <string name="add_button">OK</string>
+    <string name="remove_button">x</string>
+
+    <string name="permissions_title">Berechtigungen</string>
+    <string name="grant_accessibility">Bedienungshilfe aktivieren</string>
+    <string name="grant_overlay">Über anderen Apps anzeigen erlauben</string>
+    <string name="status_granted">✓ aktiv</string>
+    <string name="status_missing">✗ fehlt – bitte aktivieren</string>
+
+    <string name="overlay_allow_button">erlauben</string>
+    <string name="overlay_seconds_hint">Sekunden</string>
+    <string name="already_blocked">Diese Seite ist bereits in der Sperrliste.</string>
+</resources>

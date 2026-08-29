@@ -16,6 +16,24 @@ class BlockerAccessibilityService : AccessibilityService() {
 
     private var lastHost: String? = null
 
+    /** Packages we treat as browsers (must match accessibility_service_config.xml). */
+    private val browserPackages = setOf(
+        "com.android.chrome",
+        "com.chrome.beta",
+        "com.chrome.dev",
+        "com.chrome.canary",
+        "com.brave.browser",
+        "com.microsoft.emmx",
+        "com.sec.android.app.sbrowser",
+        "com.opera.browser",
+        "com.opera.mini.native",
+        "org.mozilla.firefox",
+        "com.kiwibrowser.browser",
+        "com.duckduckgo.mobile.android",
+        "com.vivaldi.browser",
+        "com.yandex.browser"
+    )
+
     /** Known address-bar view ids per browser package. */
     private val urlBarIds = listOf(
         "com.android.chrome:id/url_bar",
@@ -41,21 +59,28 @@ class BlockerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val root = rootInActiveWindow ?: return
-        val pkg = event?.packageName?.toString() ?: root.packageName?.toString()
+        val pkg = event?.packageName?.toString() ?: return
 
-        // If the foreground app is our own overlay/app, ignore.
+        // Ignore events from our own overlay/app — otherwise showing the overlay
+        // would trigger events that we react to, causing a show/remove flicker.
         if (pkg == packageName) return
 
-        val url = extractUrl(root, pkg)
-        val host = url?.let { hostFromText(it) }
-
-        if (host == null) {
-            // Not on a recognisable page (e.g. new tab / settings): drop the overlay.
+        // Left every supported browser (home screen, another app, launcher):
+        // the browser is no longer in front, so take the overlay down.
+        if (pkg !in browserPackages) {
             if (overlay.isShowing) overlay.remove()
             lastHost = null
             return
         }
+
+        val root = rootInActiveWindow ?: return
+        val url = extractUrl(root, pkg)
+        val host = url?.let { hostFromText(it) }
+
+        // Could not read a URL this time (transient: page loading, or the overlay
+        // itself is the active window). Do NOT touch the overlay — removing it here
+        // and re-adding it on the next event is exactly what caused the flicker.
+        if (host == null) return
 
         lastHost = host
 
@@ -65,6 +90,7 @@ class BlockerAccessibilityService : AccessibilityService() {
         if (blocked && !allowed) {
             overlay.show(host)
         } else if (overlay.isShowing) {
+            // We positively see a different, allowed / non-blocked page → remove.
             overlay.remove()
         }
     }

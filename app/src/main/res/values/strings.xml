@@ -16,6 +16,7 @@
     <string name="status_missing">✗ fehlt – bitte aktivieren</string>
 
     <string name="overlay_allow_button">erlauben</string>
+    <string name="overlay_close_button">Schließen</string>
     <string name="overlay_seconds_hint">Sekunden</string>
     <string name="already_blocked">Diese Seite ist bereits in der Sperrliste.</string>
 </resources>

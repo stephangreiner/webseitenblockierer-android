@@ -1,6 +1,7 @@
 package com.webseitenblockierer.app
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
@@ -39,7 +40,12 @@ class OverlayManager(private val context: Context) {
         // Showing for a different host — rebuild.
         if (overlayView != null) remove()
 
-        val root = buildOverlay(host)
+        // Cooldown state shows no text input, so the overlay must NOT grab focus:
+        // a focusable, opaque, full-screen window swallows Home/Back and can strand
+        // the user behind it (e.g. if the accessibility service later misses the
+        // event that would remove it). Only take focus for the allow (EditText) mode.
+        val cooldown = store.cooldownMinutesRemaining(host)
+        val root = buildOverlay(host, cooldown)
 
         val type =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -48,13 +54,16 @@ class OverlayManager(private val context: Context) {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
 
+        var flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        if (cooldown > 0) {
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            // Not focusable by default so the browser's back gesture still works,
-            // but we need focus for the EditText, so allow it when input is shown.
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            flags,
             PixelFormat.OPAQUE
         )
         params.gravity = Gravity.CENTER
@@ -79,7 +88,7 @@ class OverlayManager(private val context: Context) {
         shownForHost = null
     }
 
-    private fun buildOverlay(host: String): View {
+    private fun buildOverlay(host: String, cooldown: Int): View {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -96,7 +105,6 @@ class OverlayManager(private val context: Context) {
         }
         root.addView(title)
 
-        val cooldown = store.cooldownMinutesRemaining(host)
         if (cooldown > 0) {
             val msg = TextView(context).apply {
                 text = "noch $cooldown Minute" + if (cooldown > 1) "n" else ""
@@ -105,6 +113,9 @@ class OverlayManager(private val context: Context) {
                 gravity = Gravity.CENTER
             }
             root.addView(msg)
+            // Always give the user a way out, even during cooldown — otherwise a
+            // full-screen overlay with no button is an inescapable trap.
+            root.addView(buildCloseButton())
             return root
         }
 
@@ -160,6 +171,42 @@ class OverlayManager(private val context: Context) {
         row.addView(button)
 
         root.addView(row)
+        // A guaranteed escape hatch: leave the blocked page without allowing it.
+        root.addView(buildCloseButton())
         return root
+    }
+
+    /**
+     * A "Schließen" button that removes the overlay and sends the user to the home
+     * screen. It runs entirely within the overlay view, so it works even if the
+     * accessibility service is no longer processing events — the user can never be
+     * stuck behind the overlay. The site stays blocked: returning to it re-shows it.
+     */
+    private fun buildCloseButton(): View = Button(context).apply {
+        text = context.getString(R.string.overlay_close_button)
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.parseColor("#333333"))
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        lp.topMargin = 48
+        layoutParams = lp
+        setOnClickListener {
+            remove()
+            goHome()
+        }
+    }
+
+    /** Send the user to the launcher, off the blocked page. */
+    private fun goHome() {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+        }
     }
 }

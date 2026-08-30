@@ -16,6 +16,15 @@ class BlockerAccessibilityService : AccessibilityService() {
 
     private var lastHost: String? = null
 
+    /**
+     * The blocked host we have already shown the block overlay for during the
+     * current visit. Once set, we do NOT re-show the block for the same host — the
+     * user may have dismissed it (Back) and must be free to leave. It is cleared
+     * whenever a different host is seen or the browser leaves the foreground, so a
+     * *fresh* navigation back to the blocked host shows the block again.
+     */
+    private var blockHandledHost: String? = null
+
     /** Packages we treat as browsers (must match accessibility_service_config.xml). */
     private val browserPackages = setOf(
         "com.android.chrome",
@@ -66,14 +75,24 @@ class BlockerAccessibilityService : AccessibilityService() {
         if (pkg == packageName) return
 
         // Left every supported browser (home screen, another app, launcher):
-        // the browser is no longer in front, so take the overlay down.
+        // the browser is no longer in front, so take everything down. Clear the
+        // per-visit gate so returning to a blocked page counts as a new attempt.
         if (pkg !in browserPackages) {
-            if (overlay.isShowing) overlay.remove()
+            overlay.removeAll()
             lastHost = null
+            blockHandledHost = null
             return
         }
 
         val root = rootInActiveWindow ?: return
+
+        // While the user is editing the address bar (typing, or picking an
+        // autocomplete suggestion) the URL bar has input focus. That is NOT a real
+        // navigation — merely seeing a blocked URL as a suggestion must not trigger
+        // the block. Leave whatever is currently shown untouched and wait for an
+        // actual page load.
+        if (isAddressBarBeingEdited(root, pkg)) return
+
         val url = extractUrl(root, pkg)
         val host = url?.let { hostFromText(it) }
 
@@ -82,20 +101,61 @@ class BlockerAccessibilityService : AccessibilityService() {
         // and re-adding it on the next event is exactly what caused the flicker.
         if (host == null) return
 
+        // A new host means a real navigation happened → reset the per-visit gate.
+        if (host != lastHost) blockHandledHost = null
         lastHost = host
 
         val blocked = store.isHostBlocked(host)
         val allowed = store.isCurrentlyAllowed(host)
 
-        if (blocked && !allowed) {
-            overlay.show(host)
-        } else if (overlay.isShowing) {
-            // We positively see a different, allowed / non-blocked page → remove.
-            overlay.remove()
+        when {
+            blocked && allowed -> {
+                // Timed free window is running: no block, show the live countdown.
+                // Clear the per-visit gate so that when the window expires the block
+                // is shown again for this same host.
+                blockHandledHost = null
+                if (overlay.isShowing) overlay.remove()
+                overlay.showCountdown(host)
+            }
+            blocked -> {
+                // Blocked and no free window. Show the block once for this visit so
+                // the user is never permanently trapped: after dismissing it they can
+                // navigate elsewhere, and only a fresh attempt re-shows it.
+                overlay.hideCountdown()
+                if (blockHandledHost != host) {
+                    overlay.show(host)
+                    blockHandledHost = host
+                }
+            }
+            else -> {
+                // A positively-read, non-blocked page → clear everything.
+                overlay.hideCountdown()
+                if (overlay.isShowing) overlay.remove()
+            }
         }
     }
 
     override fun onInterrupt() {}
+
+    /**
+     * True while the user is actively editing the address bar (typing a URL or
+     * choosing from autocomplete). In that state the URL bar view holds input focus.
+     * We must not block on the text shown then — it is a draft/suggestion, not a
+     * loaded page. The block is only meant to fire on a real navigation.
+     */
+    private fun isAddressBarBeingEdited(root: AccessibilityNodeInfo, pkg: String?): Boolean {
+        val ids = buildList {
+            if (pkg != null) urlBarIds.firstOrNull { it.startsWith("$pkg:") }?.let { add(it) }
+            addAll(urlBarIds)
+        }
+        for (id in ids) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(id) ?: continue
+            for (node in nodes) {
+                if (node.isFocused) return true
+            }
+        }
+        return false
+    }
 
     /** Try the known id for this package first, then any known id, then a scan. */
     private fun extractUrl(root: AccessibilityNodeInfo, pkg: String?): String? {

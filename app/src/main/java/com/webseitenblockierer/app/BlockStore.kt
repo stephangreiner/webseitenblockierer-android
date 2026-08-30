@@ -83,6 +83,20 @@ class BlockStore(context: Context) {
         return System.currentTimeMillis() < until
     }
 
+    /**
+     * Epoch millis until which [hostname] is currently allowed, or 0 if there is
+     * no (active or past) free window. Used to drive the live countdown.
+     */
+    fun allowedUntil(hostname: String): Long =
+        readMap(KEY_ALLOW).optLong(hostname, 0L)
+
+    /** Seconds remaining in the active free window for [hostname], or 0 if none. */
+    fun allowSecondsRemaining(hostname: String): Int {
+        val remaining = allowedUntil(hostname) - System.currentTimeMillis()
+        if (remaining <= 0L) return 0
+        return Math.ceil(remaining / 1000.0).toInt()
+    }
+
     /** Minutes remaining in the 2h cooldown, or 0 if the site may be allowed now. */
     fun cooldownMinutesRemaining(hostname: String): Int {
         val last = readMap(KEY_SUSPEND).optLong(hostname, 0L)

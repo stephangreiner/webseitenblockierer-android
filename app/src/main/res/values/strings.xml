@@ -12,11 +12,15 @@
     <string name="permissions_title">Berechtigungen</string>
     <string name="grant_accessibility">Bedienungshilfe aktivieren</string>
     <string name="grant_overlay">Über anderen Apps anzeigen erlauben</string>
+    <string name="settings_button">Einstellungen</string>
+    <string name="perm_accessibility_name">Bedienungshilfe</string>
+    <string name="perm_overlay_name">Über anderen Apps</string>
     <string name="status_granted">✓ aktiv</string>
-    <string name="status_missing">✗ fehlt – bitte aktivieren</string>
+    <string name="status_missing">✗ fehlt</string>
 
     <string name="overlay_allow_button">erlauben</string>
     <string name="overlay_close_button">Schließen</string>
     <string name="overlay_seconds_hint">Sekunden</string>
     <string name="already_blocked">Diese Seite ist bereits in der Sperrliste.</string>
+    <string name="countdown_remaining">Noch %1$02d:%2$02d Minuten</string>
 </resources>

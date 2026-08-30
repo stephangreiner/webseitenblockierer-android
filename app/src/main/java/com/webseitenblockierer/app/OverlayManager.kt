@@ -5,8 +5,11 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -16,25 +19,43 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * Draws / removes the full-screen blocking overlay on top of whatever browser
- * is showing a blocked site. This is the native counterpart of the extension's
- * content.js `createOverlay()`.
+ * Draws / removes the two on-top views the blocker uses:
+ *  - the full-screen *block overlay* shown when a blocked site is actually opened,
+ *  - a small, unobtrusive *countdown banner* shown while a timed free window is
+ *    running, telling the user how much time is left before the site locks again.
+ *
+ * This is the native counterpart of the extension's content.js overlay.
  */
 class OverlayManager(private val context: Context) {
 
     private val windowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val store = BlockStore(context)
+    private val handler = Handler(Looper.getMainLooper())
 
+    // --- Block overlay ---------------------------------------------------
     private var overlayView: View? = null
     private var shownForHost: String? = null
 
+    // --- Countdown banner ------------------------------------------------
+    private var countdownView: View? = null
+    private var countdownText: TextView? = null
+    private var countdownHost: String? = null
+    private var countdownTick: Runnable? = null
+
     val isShowing: Boolean get() = overlayView != null
 
-    /** Whether the overlay is currently shown for this exact host. */
+    /** Whether the block overlay is currently shown for this exact host. */
     fun isShowingFor(host: String): Boolean = overlayView != null && shownForHost == host
 
+    // =====================================================================
+    // Block overlay
+    // =====================================================================
+
     fun show(host: String) {
+        // Showing the block overlay always supersedes the countdown for that host.
+        hideCountdown()
+
         // Already showing for this host — nothing to do.
         if (isShowingFor(host)) return
         // Showing for a different host — rebuild.
@@ -89,7 +110,23 @@ class OverlayManager(private val context: Context) {
     }
 
     private fun buildOverlay(host: String, cooldown: Int): View {
-        val root = LinearLayout(context).apply {
+        // Custom root so we can intercept the Back key on the whole overlay window.
+        // A plain OnKeyListener only fires for the focused child (the EditText), so
+        // it would miss Back; dispatchKeyEvent on the window root sees every key.
+        // Keeping Back working is the emergency escape: it dismisses the overlay so
+        // the user is never held on the block screen. The site stays blocked and a
+        // fresh navigation to it shows the block again.
+        val root = object : LinearLayout(context) {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                if (event.keyCode == KeyEvent.KEYCODE_BACK &&
+                    event.action == KeyEvent.ACTION_UP
+                ) {
+                    remove()
+                    return true
+                }
+                return super.dispatchKeyEvent(event)
+            }
+        }.apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(Color.parseColor("#FC000000"))
@@ -208,5 +245,115 @@ class OverlayManager(private val context: Context) {
             context.startActivity(intent)
         } catch (_: Exception) {
         }
+    }
+
+    // =====================================================================
+    // Countdown banner
+    // =====================================================================
+
+    /**
+     * Show (or keep showing) a small banner counting down the remaining time of the
+     * active free window for [host]. Updates itself every second and removes itself
+     * when the window has elapsed. A no-op if no free window is active.
+     */
+    fun showCountdown(host: String) {
+        if (store.allowSecondsRemaining(host) <= 0) {
+            hideCountdown()
+            return
+        }
+
+        // Already counting down for this host — the running tick keeps it fresh.
+        if (countdownView != null && countdownHost == host) return
+        // Different host — rebuild.
+        if (countdownView != null) hideCountdown()
+
+        val text = TextView(context).apply {
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setPadding(36, 20, 36, 20)
+            setBackgroundColor(Color.parseColor("#CC000000"))
+        }
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(text)
+        }
+
+        val type =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            // The banner must never grab input: the user keeps browsing normally
+            // underneath it while the timer runs.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        params.y = 24
+
+        try {
+            windowManager.addView(root, params)
+            countdownView = root
+            countdownText = text
+            countdownHost = host
+            startCountdownTicks(host)
+        } catch (e: Exception) {
+            // Missing overlay permission — fail silently.
+        }
+    }
+
+    private fun startCountdownTicks(host: String) {
+        countdownTick?.let { handler.removeCallbacks(it) }
+        val tick = object : Runnable {
+            override fun run() {
+                if (countdownHost != host || countdownView == null) return
+                val remaining = store.allowSecondsRemaining(host)
+                if (remaining <= 0) {
+                    hideCountdown()
+                    return
+                }
+                countdownText?.text = formatCountdown(remaining)
+                handler.postDelayed(this, 1000L)
+            }
+        }
+        countdownTick = tick
+        handler.post(tick)
+    }
+
+    fun hideCountdown() {
+        countdownTick?.let { handler.removeCallbacks(it) }
+        countdownTick = null
+        countdownView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (_: Exception) {
+            }
+        }
+        countdownView = null
+        countdownText = null
+        countdownHost = null
+    }
+
+    /** Remove everything this manager owns (e.g. when leaving the browser). */
+    fun removeAll() {
+        remove()
+        hideCountdown()
+    }
+
+    /** Format e.g. 522 seconds as "Noch 08:42 Minuten". */
+    private fun formatCountdown(totalSeconds: Int): String {
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return context.getString(R.string.countdown_remaining, minutes, seconds)
     }
 }

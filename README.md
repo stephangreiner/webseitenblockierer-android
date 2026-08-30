@@ -12,11 +12,22 @@ dem Gerät, nicht nur in Chrome.
 
 - **Bedienungshilfe** liest die Adresszeile unterstützter Browser aus und
   ermittelt den Hostnamen der aktuellen Seite.
+- Die Sperre wird erst bei einem **tatsächlichen Seitenaufruf** ausgelöst, nicht
+  schon, wenn eine gesperrte Adresse nur als Autocomplete-Vorschlag in der
+  Adresszeile erscheint (solange die Adresszeile bearbeitet wird, greift die
+  Sperre nicht).
 - Ist der Host gesperrt und kein aktives Freigabefenster offen, wird die
-  Überlagerung angezeigt.
+  Überlagerung angezeigt. Der Sperrbildschirm hält den Browser **nicht dauerhaft
+  fest**: Er wird pro Aufruf nur einmal gezeigt. Nach dem Schließen (auch per
+  **Zurück-Taste** als Notfalllösung) kann man zu einer anderen Seite navigieren;
+  der Sperrbildschirm erscheint erst wieder, wenn die gesperrte Seite erneut
+  aufgerufen wird.
 - Über die Überlagerung kann die Seite für eine bestimmte Anzahl Sekunden
   freigegeben werden (max. 3600). Danach ist die Seite für 2 Stunden gesperrt
   (wie in der Erweiterung).
+- Während einer zeitlich begrenzten Freigabe zeigt ein kleiner **Countdown**
+  („Noch 08:42 Minuten") oben am Bildschirm laufend an, wie viel Zeit bis zur
+  erneuten Sperre verbleibt.
 
 Unterstützte Browser u. a.: Chrome, Brave, Edge, Samsung Internet, Opera,
 Firefox, Kiwi, DuckDuckGo, Vivaldi, Yandex.

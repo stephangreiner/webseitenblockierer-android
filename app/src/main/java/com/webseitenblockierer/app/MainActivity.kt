@@ -59,11 +59,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderPermissionStatus() {
         val overlayOk = Settings.canDrawOverlays(this)
-        binding.overlayStatus.text =
+        binding.overlayStatus.text = getString(R.string.perm_overlay_name) + " · " +
             getString(if (overlayOk) R.string.status_granted else R.string.status_missing)
 
         val accessibilityOk = isAccessibilityEnabled()
-        binding.accessibilityStatus.text =
+        binding.accessibilityStatus.text = getString(R.string.perm_accessibility_name) + " · " +
             getString(if (accessibilityOk) R.string.status_granted else R.string.status_missing)
     }
 

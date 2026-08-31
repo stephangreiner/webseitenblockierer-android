@@ -4,6 +4,15 @@
     <!-- Draw the blocking overlay on top of the browser -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- Android 11+ package visibility: needed so we can launch a browser with an
+         ACTION_VIEW intent to send the user off a blocked page to a neutral page. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

@@ -14,17 +14,6 @@ class BlockerAccessibilityService : AccessibilityService() {
     private lateinit var store: BlockStore
     private lateinit var overlay: OverlayManager
 
-    private var lastHost: String? = null
-
-    /**
-     * The blocked host we have already shown the block overlay for during the
-     * current visit. Once set, we do NOT re-show the block for the same host — the
-     * user may have dismissed it (Back) and must be free to leave. It is cleared
-     * whenever a different host is seen or the browser leaves the foreground, so a
-     * *fresh* navigation back to the blocked host shows the block again.
-     */
-    private var blockHandledHost: String? = null
-
     /** Packages we treat as browsers (must match accessibility_service_config.xml). */
     private val browserPackages = setOf(
         "com.android.chrome",
@@ -75,12 +64,9 @@ class BlockerAccessibilityService : AccessibilityService() {
         if (pkg == packageName) return
 
         // Left every supported browser (home screen, another app, launcher):
-        // the browser is no longer in front, so take everything down. Clear the
-        // per-visit gate so returning to a blocked page counts as a new attempt.
+        // the browser is no longer in front, so take everything down.
         if (pkg !in browserPackages) {
             overlay.removeAll()
-            lastHost = null
-            blockHandledHost = null
             return
         }
 
@@ -101,31 +87,24 @@ class BlockerAccessibilityService : AccessibilityService() {
         // and re-adding it on the next event is exactly what caused the flicker.
         if (host == null) return
 
-        // A new host means a real navigation happened → reset the per-visit gate.
-        if (host != lastHost) blockHandledHost = null
-        lastHost = host
-
         val blocked = store.isHostBlocked(host)
         val allowed = store.isCurrentlyAllowed(host)
 
         when {
             blocked && allowed -> {
                 // Timed free window is running: no block, show the live countdown.
-                // Clear the per-visit gate so that when the window expires the block
-                // is shown again for this same host.
-                blockHandledHost = null
                 if (overlay.isShowing) overlay.remove()
                 overlay.showCountdown(host)
             }
             blocked -> {
-                // Blocked and no free window. Show the block once for this visit so
-                // the user is never permanently trapped: after dismissing it they can
-                // navigate elsewhere, and only a fresh attempt re-shows it.
-                overlay.hideCountdown()
-                if (blockHandledHost != host) {
-                    overlay.show(host)
-                    blockHandledHost = host
-                }
+                // Blocked and no free window: keep the block up whenever the blocked
+                // page is in front. show() is idempotent while already showing this
+                // host, so this does not flicker. The user leaves via "Andere Seite
+                // öffnen" (navigates the browser to a neutral page) or, as an
+                // emergency, the Back key — the block re-appears on the next real
+                // event, which is exactly what closes the old "reopen the browser and
+                // the blocked page is visible" hole.
+                overlay.show(host, pkg)
             }
             else -> {
                 // A positively-read, non-blocked page → clear everything.

@@ -2,6 +2,7 @@ package com.webseitenblockierer.app
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
@@ -52,7 +53,7 @@ class OverlayManager(private val context: Context) {
     // Block overlay
     // =====================================================================
 
-    fun show(host: String) {
+    fun show(host: String, browserPackage: String? = null) {
         // Showing the block overlay always supersedes the countdown for that host.
         hideCountdown()
 
@@ -66,7 +67,7 @@ class OverlayManager(private val context: Context) {
         // the user behind it (e.g. if the accessibility service later misses the
         // event that would remove it). Only take focus for the allow (EditText) mode.
         val cooldown = store.cooldownMinutesRemaining(host)
-        val root = buildOverlay(host, cooldown)
+        val root = buildOverlay(host, cooldown, browserPackage)
 
         val type =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -109,7 +110,7 @@ class OverlayManager(private val context: Context) {
         shownForHost = null
     }
 
-    private fun buildOverlay(host: String, cooldown: Int): View {
+    private fun buildOverlay(host: String, cooldown: Int, browserPackage: String?): View {
         // Custom root so we can intercept the Back key on the whole overlay window.
         // A plain OnKeyListener only fires for the focused child (the EditText), so
         // it would miss Back; dispatchKeyEvent on the window root sees every key.
@@ -152,7 +153,7 @@ class OverlayManager(private val context: Context) {
             root.addView(msg)
             // Always give the user a way out, even during cooldown — otherwise a
             // full-screen overlay with no button is an inescapable trap.
-            root.addView(buildCloseButton())
+            root.addView(buildCloseButton(browserPackage))
             return root
         }
 
@@ -209,17 +210,21 @@ class OverlayManager(private val context: Context) {
 
         root.addView(row)
         // A guaranteed escape hatch: leave the blocked page without allowing it.
-        root.addView(buildCloseButton())
+        root.addView(buildCloseButton(browserPackage))
         return root
     }
 
     /**
-     * A "Schließen" button that removes the overlay and sends the user to the home
-     * screen. It runs entirely within the overlay view, so it works even if the
+     * An "Andere Seite öffnen" button that removes the overlay and navigates the
+     * *same* browser to a neutral page, so the user leaves the blocked page while
+     * staying in the browser — and, crucially, the browser's last page is no longer
+     * the blocked one, so reopening it does not land straight back on the block.
+     *
+     * It runs entirely within the overlay view, so it works even if the
      * accessibility service is no longer processing events — the user can never be
      * stuck behind the overlay. The site stays blocked: returning to it re-shows it.
      */
-    private fun buildCloseButton(): View = Button(context).apply {
+    private fun buildCloseButton(browserPackage: String?): View = Button(context).apply {
         text = context.getString(R.string.overlay_close_button)
         setTextColor(Color.WHITE)
         setBackgroundColor(Color.parseColor("#333333"))
@@ -231,11 +236,38 @@ class OverlayManager(private val context: Context) {
         layoutParams = lp
         setOnClickListener {
             remove()
+            openNeutralPage(browserPackage)
+        }
+    }
+
+    /**
+     * Open a neutral page in [browserPackage] (the browser the block was shown in),
+     * replacing the blocked page. Falls back to the default browser and, if even
+     * that fails, to the home screen, so there is always a way off the page.
+     */
+    private fun openNeutralPage(browserPackage: String?) {
+        val uri = Uri.parse(context.getString(R.string.neutral_page_url))
+        val view = Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        // Prefer the same browser so the user stays where they were.
+        if (browserPackage != null) {
+            try {
+                context.startActivity(Intent(view).setPackage(browserPackage))
+                return
+            } catch (_: Exception) {
+                // The browser could not be targeted directly (e.g. package not
+                // visible / no matching activity) — fall through to the default.
+            }
+        }
+        try {
+            context.startActivity(view)
+        } catch (_: Exception) {
             goHome()
         }
     }
 
-    /** Send the user to the launcher, off the blocked page. */
+    /** Last-resort exit: send the user to the launcher, off the blocked page. */
     private fun goHome() {
         try {
             val intent = Intent(Intent.ACTION_MAIN).apply {

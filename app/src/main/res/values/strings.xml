@@ -19,8 +19,11 @@
     <string name="status_missing">✗ fehlt</string>
 
     <string name="overlay_allow_button">erlauben</string>
-    <string name="overlay_close_button">Schließen</string>
+    <string name="overlay_close_button">Andere Seite öffnen</string>
     <string name="overlay_seconds_hint">Sekunden</string>
+    <!-- Neutral page opened in the same browser to leave a blocked page without
+         going to the home screen. Change this to any harmless start page. -->
+    <string name="neutral_page_url">https://www.google.com/</string>
     <string name="already_blocked">Diese Seite ist bereits in der Sperrliste.</string>
     <string name="countdown_remaining">Noch %1$02d:%2$02d Minuten</string>
 </resources>

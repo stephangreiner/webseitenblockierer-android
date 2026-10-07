@@ -46,13 +46,17 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         private const val PREFS = "nur10_einstellungen"
         private const val KEY_EXERCISE = "uebung"
         private const val KEY_PICTURES = "bilderansicht"
-        private const val KEY_SOUND = "ton"
+        private const val KEY_SOUND = "tonmodus"
         private const val KEY_PUSHUP_NOTE = "liegestuetzton"
 
         private val BACKGROUND = Color.rgb(15, 18, 28)
         private val SURFACE = Color.rgb(24, 29, 42)
         private val TEXT = Color.argb(242, 255, 255, 255)
         private val TEXT_DIM = Color.argb(184, 223, 228, 242)
+
+        private const val SOUND_OFF = "aus"
+        private const val SOUND_SYNTH = "standard"
+        private const val SOUND_MUSIC = "lieder"
 
         /** Push-up note choices: base note and the "every 10th" note above it. */
         private val PUSHUP_NOTES = listOf(
@@ -63,6 +67,8 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var credit: CreditStore
     private lateinit var stats: ExerciseStats
     private lateinit var images: ImageStore
+    private lateinit var songs: SongStore
+    private lateinit var music: MusicPlayer
     private val synth = SynthPlayer()
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -73,7 +79,7 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     // Settings
     private var exercise = Exercise.KNIEBEUGEN
     private var pictureView = false
-    private var sound = true
+    private var sound = SOUND_SYNTH
     private var pushupNote = 0
 
     // Session state
@@ -90,6 +96,8 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var imageSection: LinearLayout
     private lateinit var imageInfo: TextView
     private lateinit var thumbRow: LinearLayout
+    private lateinit var songSection: LinearLayout
+    private lateinit var songList: LinearLayout
 
     // Active views
     private lateinit var activeRoot: FrameLayout
@@ -108,6 +116,15 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
             renderImages()
         }
 
+    private val pickSongs =
+        registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            val added = uris.count { songs.add(it) }
+            if (uris.isNotEmpty() && added < uris.size) {
+                Toast.makeText(this, R.string.song_add_failed, Toast.LENGTH_SHORT).show()
+            }
+            renderSongs()
+        }
+
     private val timerTick = object : Runnable {
         override fun run() {
             if (!active) return
@@ -122,12 +139,14 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         credit = CreditStore(this)
         stats = ExerciseStats(this)
         images = ImageStore(this)
+        songs = SongStore(this)
+        music = MusicPlayer(this, songs).apply { onSongChanged = { renderSongs() } }
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         exercise = Exercise.fromKey(prefs.getString(KEY_EXERCISE, null))
         pictureView = prefs.getBoolean(KEY_PICTURES, false)
-        sound = prefs.getBoolean(KEY_SOUND, true)
+        sound = prefs.getString(KEY_SOUND, SOUND_SYNTH) ?: SOUND_SYNTH
         pushupNote = prefs.getInt(KEY_PUSHUP_NOTE, 0).coerceIn(0, PUSHUP_NOTES.size - 1)
 
         setupRoot = buildSetupView()
@@ -156,10 +175,12 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     override fun onPause() {
         super.onPause()
         sensorManager.unregisterListener(this)
+        music.pause()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        music.release()
         super.onDestroy()
     }
 
@@ -279,16 +300,31 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         column.addView(sectionLabel(getString(R.string.sound_label)))
         column.addView(RadioGroup(this).apply {
             orientation = RadioGroup.HORIZONTAL
-            val off = radio(getString(R.string.sound_off))
-            val on = radio(getString(R.string.sound_on))
-            addView(off)
-            addView(on)
-            check(if (sound) on.id else off.id)
+            val modes = listOf(
+                SOUND_OFF to radio(getString(R.string.sound_off)),
+                SOUND_SYNTH to radio(getString(R.string.sound_on)),
+                SOUND_MUSIC to radio(getString(R.string.sound_music))
+            )
+            modes.forEach { addView(it.second) }
+            check((modes.firstOrNull { it.first == sound } ?: modes[1]).second.id)
             setOnCheckedChangeListener { _, id ->
-                sound = id == on.id
-                prefs.edit().putBoolean(KEY_SOUND, sound).apply()
+                sound = modes.first { it.second.id == id }.first
+                prefs.edit().putString(KEY_SOUND, sound).apply()
+                renderSongs()
             }
         })
+
+        songSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        songSection.addView(Button(this).apply {
+            text = getString(R.string.song_add)
+            setOnClickListener { pickSongs.launch("audio/*") }
+        })
+        songList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        songSection.addView(songList)
+        column.addView(songSection)
 
         column.addView(Button(this).apply {
             text = getString(R.string.stats_button)
@@ -311,6 +347,7 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         activeRoot.visibility = View.GONE
         renderExercise()
         renderImages()
+        renderSongs()
         refreshCredit()
     }
 
@@ -352,6 +389,55 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
                         .show()
                 }
             })
+        }
+    }
+
+    private fun renderSongs() {
+        songSection.visibility = if (sound == SOUND_MUSIC) View.VISIBLE else View.GONE
+        songList.removeAllViews()
+        val files = songs.list()
+        if (files.isEmpty()) {
+            songList.addView(TextView(this).apply {
+                text = getString(R.string.song_info_empty)
+                setTextColor(TEXT_DIM)
+                textSize = 13f
+            })
+            return
+        }
+        val current = music.currentSong()
+        for (file in files) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(TextView(this).apply {
+                val selected = file == current
+                text = (if (selected) "▶ " else "") + SongStore.title(file)
+                setTextColor(if (selected) Exercise.LIEGESTUETZE.color else TEXT)
+                textSize = 15f
+                setPadding(0, dp(10), dp(8), dp(10))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                // Tap a title to make it the current song.
+                setOnClickListener {
+                    music.select(file.name)
+                    renderSongs()
+                }
+            })
+            row.addView(Button(this).apply {
+                text = "x"
+                setOnClickListener {
+                    AlertDialog.Builder(this@TrainingActivity)
+                        .setMessage(getString(R.string.song_delete_confirm, SongStore.title(file)))
+                        .setPositiveButton(R.string.delete) { _, _ ->
+                            if (file == music.currentSong()) music.release()
+                            songs.remove(file)
+                            renderSongs()
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            })
+            songList.addView(row)
         }
     }
 
@@ -478,6 +564,7 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         handler.removeCallbacks(timerTick)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         backgroundImage.setImageDrawable(null)
+        music.pause()
         showSetup()
     }
 
@@ -502,7 +589,8 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         stats.increment(exercise)
         credit.add(1)
 
-        if (sound) {
+        if (sound == SOUND_MUSIC) music.onRep()
+        if (sound == SOUND_SYNTH) {
             val tenth = count % 10 == 0
             if (exercise.usesSensor) {
                 synth.play(if (tenth) "C" else "E", 4, 0.5f)

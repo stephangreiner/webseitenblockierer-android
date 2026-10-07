@@ -43,6 +43,11 @@
     <string name="sound_label">Ton</string>
     <string name="sound_off">Kein Ton</string>
     <string name="sound_on">Standard-Ton</string>
+    <string name="sound_music">Eigene Lieder</string>
+    <string name="song_add">Lieder hinzufügen</string>
+    <string name="song_info_empty">Noch keine Lieder. Die Musik läuft, solange du Übungen machst, und pausiert nach 5 Sekunden Pause.</string>
+    <string name="song_delete_confirm">„%1$s“ löschen?</string>
+    <string name="song_add_failed">Nicht alle Lieder konnten gespeichert werden.</string>
     <string name="image_add">Bilder hinzufügen</string>
     <string name="image_delete_all">Alle löschen</string>
     <string name="image_delete_all_confirm">Alle eigenen Bilder löschen?</string>

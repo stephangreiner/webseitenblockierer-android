@@ -47,7 +47,12 @@ Sperrbildschirm):
   Wiederholungen ein zufälliges **eigenes Bild**. Bilder lassen sich im Training
   hinzufügen und einzeln (antippen) oder alle löschen; sie werden in den
   App-Speicher kopiert.
-- Optionaler Standard-Ton pro Wiederholung, Statistik pro Tag und Monat.
+- Ton: kein Ton, Standard-Ton pro Wiederholung oder **eigene Lieder**. Lieder
+  werden in die App hochgeladen und aus der Liste gewählt (antippen); „x“
+  löscht ein Lied. Die Musik läuft, solange Wiederholungen kommen, pausiert nach
+  5 Sekunden ohne Wiederholung und macht an derselben Stelle weiter. Ist ein Lied
+  zu Ende, wird zufällig das nächste gespeicherte Lied gespielt.
+- Statistik pro Tag und Monat.
 
 ## APK herunterladen und installieren
 

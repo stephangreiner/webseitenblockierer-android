@@ -32,6 +32,7 @@ class OverlayManager(private val context: Context) {
     private val windowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val store = BlockStore(context)
+    private val credit = CreditStore(context)
     private val handler = Handler(Looper.getMainLooper())
 
     // --- Block overlay ---------------------------------------------------
@@ -62,12 +63,12 @@ class OverlayManager(private val context: Context) {
         // Showing for a different host — rebuild.
         if (overlayView != null) remove()
 
-        // Cooldown state shows no text input, so the overlay must NOT grab focus:
+        // Without credit there is no text input, so the overlay must NOT grab focus:
         // a focusable, opaque, full-screen window swallows Home/Back and can strand
         // the user behind it (e.g. if the accessibility service later misses the
-        // event that would remove it). Only take focus for the allow (EditText) mode.
-        val cooldown = store.cooldownMinutesRemaining(host)
-        val root = buildOverlay(host, cooldown, browserPackage)
+        // event that would remove it). Only take focus when seconds can be entered.
+        val balance = credit.balance()
+        val root = buildOverlay(host, balance, browserPackage)
 
         val type =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -77,7 +78,7 @@ class OverlayManager(private val context: Context) {
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
 
         var flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-        if (cooldown > 0) {
+        if (balance <= 0) {
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
 
@@ -110,7 +111,7 @@ class OverlayManager(private val context: Context) {
         shownForHost = null
     }
 
-    private fun buildOverlay(host: String, cooldown: Int, browserPackage: String?): View {
+    private fun buildOverlay(host: String, balance: Int, browserPackage: String?): View {
         // Custom root so we can intercept the Back key on the whole overlay window.
         // A plain OnKeyListener only fires for the focused child (the EditText), so
         // it would miss Back; dispatchKeyEvent on the window root sees every key.
@@ -143,16 +144,26 @@ class OverlayManager(private val context: Context) {
         }
         root.addView(title)
 
-        if (cooldown > 0) {
+        val balanceText = TextView(context).apply {
+            text = context.getString(R.string.credit_balance, balance)
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 32)
+        }
+        root.addView(balanceText)
+
+        if (balance <= 0) {
             val msg = TextView(context).apply {
-                text = "noch $cooldown Minute" + if (cooldown > 1) "n" else ""
-                setTextColor(Color.WHITE)
-                textSize = 18f
+                text = context.getString(R.string.overlay_no_credit)
+                setTextColor(Color.LTGRAY)
+                textSize = 16f
                 gravity = Gravity.CENTER
             }
             root.addView(msg)
-            // Always give the user a way out, even during cooldown — otherwise a
-            // full-screen overlay with no button is an inescapable trap.
+            root.addView(buildTrainingButton())
+            // Always give the user a way out — otherwise a full-screen overlay
+            // without input is an inescapable trap.
             root.addView(buildCloseButton(browserPackage))
             return root
         }
@@ -164,7 +175,7 @@ class OverlayManager(private val context: Context) {
 
         val input = EditText(context).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
-            hint = context.getString(R.string.overlay_seconds_hint)
+            hint = context.getString(R.string.overlay_seconds_hint, balance)
             setHintTextColor(Color.GRAY)
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.BLACK)
@@ -194,10 +205,12 @@ class OverlayManager(private val context: Context) {
                     ).show()
                     return@setOnClickListener
                 }
-                if (seconds > BlockStore.MAX_DURATION_SECONDS) {
+                // Pay with credit; the balance may have changed since the overlay
+                // was built, so spend() re-checks it.
+                if (!credit.spend(seconds)) {
                     Toast.makeText(
                         context,
-                        "Die maximale erlaubte Dauer ist ${BlockStore.MAX_DURATION_SECONDS} Sekunden.",
+                        context.getString(R.string.overlay_not_enough, credit.balance()),
                         Toast.LENGTH_SHORT
                     ).show()
                     return@setOnClickListener
@@ -209,9 +222,33 @@ class OverlayManager(private val context: Context) {
         row.addView(button)
 
         root.addView(row)
+        root.addView(buildTrainingButton())
         // A guaranteed escape hatch: leave the blocked page without allowing it.
         root.addView(buildCloseButton(browserPackage))
         return root
+    }
+
+    /** Opens the training screen, where exercise reps earn more seconds. */
+    private fun buildTrainingButton(): View = Button(context).apply {
+        text = context.getString(R.string.overlay_training_button)
+        setTextColor(Color.BLACK)
+        setBackgroundColor(Color.rgb(240, 255, 105))
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        lp.topMargin = 48
+        layoutParams = lp
+        setOnClickListener {
+            remove()
+            try {
+                context.startActivity(
+                    Intent(context, TrainingActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /**

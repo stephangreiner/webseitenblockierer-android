@@ -6,10 +6,9 @@ import org.json.JSONObject
 /**
  * Persistent state for the blocker, backed by SharedPreferences.
  *
- * Mirrors the logic of the original Chrome extension:
- *  - blockedSites:       the list of blocked hostnames
- *  - suspendTimestamps:  when a site was last "allowed" (start of the 2h cooldown)
- *  - allowUntil:         until when a site is currently allowed (the active free window)
+ *  - blockedSites:  the list of blocked hostnames
+ *  - allowUntil:    until when a site is currently allowed (the active free window,
+ *                   bought with seconds from the [CreditStore])
  */
 class BlockStore(context: Context) {
 
@@ -19,14 +18,7 @@ class BlockStore(context: Context) {
     companion object {
         private const val PREFS = "webseitenblockierer"
         private const val KEY_SITES = "blockedSites"
-        private const val KEY_SUSPEND = "suspendTimestamps"
         private const val KEY_ALLOW = "allowUntil"
-
-        /** 2 hours cooldown between allowances, as in the extension. */
-        const val SUSPENSION_INTERVAL_MS = 2L * 60L * 60L * 1000L
-
-        /** Maximum allowed free duration: 3600 seconds (1 hour). */
-        const val MAX_DURATION_SECONDS = 3600
     }
 
     // --- Blocked sites ---------------------------------------------------
@@ -97,29 +89,17 @@ class BlockStore(context: Context) {
         return Math.ceil(remaining / 1000.0).toInt()
     }
 
-    /** Minutes remaining in the 2h cooldown, or 0 if the site may be allowed now. */
-    fun cooldownMinutesRemaining(hostname: String): Int {
-        val last = readMap(KEY_SUSPEND).optLong(hostname, 0L)
-        val elapsed = System.currentTimeMillis() - last
-        if (elapsed >= SUSPENSION_INTERVAL_MS) return 0
-        return Math.ceil((SUSPENSION_INTERVAL_MS - elapsed) / 60000.0).toInt()
-    }
-
     /**
-     * Start a free window of [seconds] for [hostname] and begin the 2h cooldown.
+     * Start (or extend) a free window of [seconds] for [hostname].
      * Returns the epoch millis at which the window ends.
      */
     fun allowFor(hostname: String, seconds: Int): Long {
         val now = System.currentTimeMillis()
-        val until = now + seconds * 1000L
+        val until = maxOf(now, allowedUntil(hostname)) + seconds * 1000L
 
         val allow = readMap(KEY_ALLOW)
         allow.put(hostname, until)
         writeMap(KEY_ALLOW, allow)
-
-        val suspend = readMap(KEY_SUSPEND)
-        suspend.put(hostname, now)
-        writeMap(KEY_SUSPEND, suspend)
 
         return until
     }

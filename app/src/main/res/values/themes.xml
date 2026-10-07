@@ -4,4 +4,9 @@
         <item name="colorPrimary">@color/black</item>
         <item name="colorOnPrimary">@color/white</item>
     </style>
+
+    <!-- nur10 training screens: always dark, like the original web app. -->
+    <style name="Theme.Webseitenblockierer.Training" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>

@@ -18,12 +18,50 @@
     <string name="status_granted">✓ aktiv</string>
     <string name="status_missing">✗ fehlt</string>
 
-    <string name="overlay_allow_button">erlauben</string>
+    <string name="overlay_allow_button">einlösen</string>
     <string name="overlay_close_button">Andere Seite öffnen</string>
-    <string name="overlay_seconds_hint">Sekunden</string>
+    <string name="overlay_seconds_hint">Sekunden (max. %1$d)</string>
+    <string name="overlay_no_credit">Kein Guthaben. Mach ein paar Übungen –\njede Wiederholung bringt 1 Sekunde.</string>
+    <string name="overlay_not_enough">Nicht genug Guthaben (verfügbar: %1$d s).</string>
+    <string name="overlay_training_button">Training öffnen</string>
     <!-- Neutral page opened in the same browser to leave a blocked page without
          going to the home screen. Change this to any harmless start page. -->
     <string name="neutral_page_url">https://www.google.com/</string>
     <string name="already_blocked">Diese Seite ist bereits in der Sperrliste.</string>
     <string name="countdown_remaining">Noch %1$02d:%2$02d Minuten</string>
+
+    <!-- Guthaben / Training (nur10) -->
+    <string name="credit_title">Guthaben</string>
+    <string name="credit_balance">Guthaben heute: %1$d s</string>
+    <string name="credit_hint">Jede Übung bringt 1 Sekunde für eine gesperrte Seite. Das Guthaben verfällt um Mitternacht.</string>
+    <string name="training_button">Training starten</string>
+    <string name="training_title">Training</string>
+    <string name="start_button">Start\n%1$s</string>
+    <string name="view_label">Ansicht</string>
+    <string name="view_number">Zahl</string>
+    <string name="view_pictures">Bilder</string>
+    <string name="sound_label">Ton</string>
+    <string name="sound_off">Kein Ton</string>
+    <string name="sound_on">Standard-Ton</string>
+    <string name="sound_music">Eigene Lieder</string>
+    <string name="song_add">Lieder hinzufügen</string>
+    <string name="song_info_empty">Noch keine Lieder. Die Musik läuft, solange du Übungen machst, und pausiert nach 5 Sekunden Pause.</string>
+    <string name="song_delete_confirm">„%1$s“ löschen?</string>
+    <string name="song_add_failed">Nicht alle Lieder konnten gespeichert werden.</string>
+    <string name="image_add">Bilder hinzufügen</string>
+    <string name="image_delete_all">Alle löschen</string>
+    <string name="image_delete_all_confirm">Alle eigenen Bilder löschen?</string>
+    <string name="image_delete_one_confirm">Dieses Bild löschen?</string>
+    <string name="image_info_empty">Noch keine eigenen Bilder. Alle 10 Wiederholungen erscheint ein zufälliges Bild.</string>
+    <plurals name="image_info_count">
+        <item quantity="one">%1$d eigenes Bild gespeichert (antippen zum Löschen)</item>
+        <item quantity="other">%1$d eigene Bilder gespeichert (antippen zum Löschen)</item>
+    </plurals>
+    <string name="image_add_failed">Nicht alle Bilder konnten gespeichert werden.</string>
+    <string name="delete">Löschen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="no_sensor">Dieses Gerät hat keinen Beschleunigungssensor.</string>
+    <string name="stats_button">Statistik</string>
+    <string name="stats_day">Tag</string>
+    <string name="stats_total">%1$s gesamt</string>
 </resources>

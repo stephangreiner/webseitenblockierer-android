@@ -31,6 +31,18 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".TrainingActivity"
+            android:exported="false"
+            android:label="@string/training_title"
+            android:theme="@style/Theme.Webseitenblockierer.Training" />
+
+        <activity
+            android:name=".StatsActivity"
+            android:exported="false"
+            android:label="@string/stats_button"
+            android:theme="@style/Theme.Webseitenblockierer.Training" />
+
         <service
             android:name=".BlockerAccessibilityService"
             android:exported="false"

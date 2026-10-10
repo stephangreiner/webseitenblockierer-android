@@ -123,5 +123,39 @@
                 android:textSize="13sp"
                 android:text="@string/settings_button" />
         </LinearLayout>
+
+        <!-- Android 13+: sideloaded apps must first be allowed to use the
+             accessibility service ("Eingeschränkte Einstellungen zulassen").
+             Only shown while the accessibility service is still missing. -->
+        <LinearLayout
+            android:id="@+id/restrictedRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="13sp"
+                android:alpha="0.75"
+                android:text="@string/perm_restricted_hint" />
+
+            <Button
+                android:id="@+id/restrictedButton"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:textSize="13sp"
+                android:text="@string/perm_app_info" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

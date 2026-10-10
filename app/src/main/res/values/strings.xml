@@ -17,6 +17,9 @@
     <string name="perm_overlay_name">Über anderen Apps</string>
     <string name="status_granted">✓ aktiv</string>
     <string name="status_missing">✗ fehlt</string>
+    <string name="grant_now">Jetzt aktivieren ›</string>
+    <string name="perm_restricted_hint">Schalter grau oder „Eingeschränkte Einstellung“? In der App-Info oben rechts ⋮ → „Eingeschränkte Einstellungen zulassen“, dann die Bedienungshilfe aktivieren.</string>
+    <string name="perm_app_info">App-Info ›</string>
 
     <string name="overlay_allow_button">einlösen</string>
     <string name="overlay_close_button">Andere Seite öffnen</string>

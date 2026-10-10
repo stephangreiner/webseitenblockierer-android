@@ -17,6 +17,9 @@
     <string name="perm_overlay_name">Über anderen Apps</string>
     <string name="status_granted">✓ aktiv</string>
     <string name="status_missing">✗ fehlt</string>
+    <string name="grant_now">Jetzt aktivieren ›</string>
+    <string name="perm_restricted_hint">Schalter grau oder „Eingeschränkte Einstellung“? In der App-Info oben rechts ⋮ → „Eingeschränkte Einstellungen zulassen“, dann die Bedienungshilfe aktivieren.</string>
+    <string name="perm_app_info">App-Info ›</string>
 
     <string name="overlay_allow_button">einlösen</string>
     <string name="overlay_close_button">Andere Seite öffnen</string>
@@ -36,7 +39,7 @@
     <string name="credit_hint">Jede Übung bringt 1 Sekunde für eine gesperrte Seite. Das Guthaben verfällt um Mitternacht.</string>
     <string name="training_button">Training starten</string>
     <string name="training_title">Training</string>
-    <string name="start_button">Start\n%1$s</string>
+    <string name="start_button">Start · %1$s</string>
     <string name="view_label">Ansicht</string>
     <string name="view_number">Zahl</string>
     <string name="view_pictures">Bilder</string>
@@ -44,6 +47,33 @@
     <string name="sound_off">Kein Ton</string>
     <string name="sound_on">Standard-Ton</string>
     <string name="sound_music">Eigene Lieder</string>
+    <string name="sound_fixed">Ton: fest</string>
+    <string name="sound_scale">Ton: Tonleiter</string>
+    <string name="sound_piece">Klavierstück</string>
+    <string name="songs_manage">Lieder verwalten…</string>
+    <string name="songs_title">Lieder</string>
+    <string name="song_hint">Antippen wählt das Lied, mit dem es weitergeht. Die Musik läuft, solange du Übungen machst, und pausiert nach 5 Sekunden Pause. Am Liedende kommt zufällig das nächste.</string>
+    <string name="piece_label">Stück</string>
+    <string name="images_manage">Bilder verwalten…</string>
+    <string name="images_title">Bilder</string>
+    <string name="blocker_link">Gesperrte Seiten ›</string>
+    <string name="rh_sensitivity_normal">Empfindlichkeit: Normal</string>
+    <string name="rh_sensitivity_small">Empfindlichkeit: Klein</string>
+    <string name="rh_view_number">Ansicht: Zahl</string>
+    <string name="rh_view_curve">Ansicht: Kurve</string>
+    <string name="melody_edit">Melodien bearbeiten…</string>
+    <string name="melody_title">Eigene Melodien</string>
+    <string name="melody_new">Neue Melodie</string>
+    <string name="melody_name_hint">Name der Melodie</string>
+    <string name="melody_octave">Oktave %1$d</string>
+    <string name="melody_format_hint">Tasten antippen oder Noten eintippen, z. B. „E4 F#4/8 G4/2 A4/4.“: Ton (C–H, # oder b), Oktave, Länge (/1 ganze, /2 halbe, /4 viertel = Standard, /8 achtel, /16), Punkt = 1,5-fach. Im Training spielt jede Wiederholung die nächste Note.</string>
+    <string name="melody_undo">⌫ Letzte Note</string>
+    <string name="melody_play">▶ Anhören</string>
+    <string name="melody_save">Speichern</string>
+    <string name="melody_invalid">Unbekannte Note: „%1$s“</string>
+    <string name="melody_name_missing">Bitte gib der Melodie einen Namen.</string>
+    <string name="melody_empty">Die Melodie enthält noch keine Noten.</string>
+    <string name="melody_saved">Gespeichert.</string>
     <string name="song_add">Lieder hinzufügen</string>
     <string name="song_info_empty">Noch keine Lieder. Die Musik läuft, solange du Übungen machst, und pausiert nach 5 Sekunden Pause.</string>
     <string name="song_delete_confirm">„%1$s“ löschen?</string>

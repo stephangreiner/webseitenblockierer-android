@@ -1,8 +1,10 @@
 package com.webseitenblockierer.app
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
@@ -19,18 +21,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var store: BlockStore
-    private lateinit var credit: CreditStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         store = BlockStore(this)
-        credit = CreditStore(this)
-
-        binding.trainingButton.setOnClickListener {
-            startActivity(Intent(this, TrainingActivity::class.java))
-        }
 
         binding.addButton.setOnClickListener {
             val value = binding.siteInput.text.toString()
@@ -43,35 +39,74 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.accessibilityButton.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+        binding.accessibilityButton.setOnClickListener { openAccessibilitySettings() }
+        binding.accessibilityStatus.setOnClickListener { openAccessibilitySettings() }
+        binding.overlayButton.setOnClickListener { openOverlaySettings() }
+        binding.overlayStatus.setOnClickListener { openOverlaySettings() }
+        binding.restrictedButton.setOnClickListener { openAppInfo() }
+    }
 
-        binding.overlayButton.setOnClickListener {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        }
+    /**
+     * Open this app's own accessibility switch where the system supports it,
+     * otherwise the general accessibility list.
+     */
+    private fun openAccessibilitySettings() {
+        val component = ComponentName(this, BlockerAccessibilityService::class.java)
+        val details = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+            .putExtra(Intent.EXTRA_COMPONENT_NAME, component.flattenToString())
+        if (!tryStart(details)) tryStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun openOverlaySettings() {
+        val direct = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+        if (!tryStart(direct)) tryStart(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+    }
+
+    /** App info page, where "Eingeschränkte Einstellungen zulassen" lives (Android 13+). */
+    private fun openAppInfo() {
+        tryStart(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        )
+    }
+
+    private fun tryStart(intent: Intent): Boolean = try {
+        startActivity(intent)
+        true
+    } catch (_: Exception) {
+        false
     }
 
     override fun onResume() {
         super.onResume()
         renderList()
         renderPermissionStatus()
-        binding.creditBalance.text = getString(R.string.credit_balance, credit.balance())
     }
 
     private fun renderPermissionStatus() {
         val overlayOk = Settings.canDrawOverlays(this)
         binding.overlayStatus.text = getString(R.string.perm_overlay_name) + " · " +
             getString(if (overlayOk) R.string.status_granted else R.string.status_missing)
+        renderPermissionButton(binding.overlayButton, overlayOk)
 
         val accessibilityOk = isAccessibilityEnabled()
         binding.accessibilityStatus.text = getString(R.string.perm_accessibility_name) + " · " +
             getString(if (accessibilityOk) R.string.status_granted else R.string.status_missing)
+        renderPermissionButton(binding.accessibilityButton, accessibilityOk)
+
+        binding.restrictedRow.visibility =
+            if (!accessibilityOk && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                android.view.View.VISIBLE
+            else
+                android.view.View.GONE
+    }
+
+    /** A missing permission gets a prominent "Jetzt aktivieren ›" link. */
+    private fun renderPermissionButton(button: Button, granted: Boolean) {
+        button.text = getString(if (granted) R.string.settings_button else R.string.grant_now)
+        button.alpha = if (granted) 0.6f else 1f
     }
 
     private fun isAccessibilityEnabled(): Boolean {

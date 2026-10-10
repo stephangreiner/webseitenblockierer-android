@@ -8,7 +8,6 @@ import android.os.Looper
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -19,17 +18,17 @@ class SynthPlayer {
 
     companion object {
         private const val SAMPLE_RATE = 44100
-        private val SEMITONES = mapOf(
-            "C" to 0, "D" to 2, "E" to 4, "F" to 5, "G" to 7, "A" to 9, "B" to 11
-        )
     }
 
     private val cache = HashMap<String, ShortArray>()
     private val handler = Handler(Looper.getMainLooper())
 
-    fun play(note: String, octave: Int = 4, durationSeconds: Float = 0.5f) {
-        val pcm = cache.getOrPut("$note$octave/$durationSeconds") {
-            render(frequency(note, octave), durationSeconds)
+    fun play(note: String, octave: Int = 4, durationSeconds: Float = 0.5f) =
+        playMidi(Melody.midi(note, octave), durationSeconds)
+
+    fun playMidi(midi: Int, durationSeconds: Float) {
+        val pcm = cache.getOrPut("$midi/$durationSeconds") {
+            render(Melody.frequency(midi), durationSeconds)
         }
         try {
             val track = AudioTrack.Builder()
@@ -55,11 +54,6 @@ class SynthPlayer {
         } catch (_: Exception) {
             // Audio is optional — never let a playback problem break counting.
         }
-    }
-
-    private fun frequency(note: String, octave: Int): Double {
-        val semitone = SEMITONES[note] ?: 0
-        return 440.0 * 2.0.pow((semitone - 9) / 12.0 + (octave - 4))
     }
 
     private fun render(freq: Double, durationSeconds: Float): ShortArray {

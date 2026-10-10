@@ -35,23 +35,34 @@ Firefox, Kiwi, DuckDuckGo, Vivaldi, Yandex.
 
 ## Training (nur10) und Guthaben
 
-Die Übungs-App **nur10** ist als Kotlin-Version in die App integriert
-(„Training starten" auf dem Startbildschirm oder „Training öffnen" im
-Sperrbildschirm):
+Die Übungs-App **nur10** ist als Kotlin-Version integriert und ist der
+**Startbildschirm** der App. Die Verwaltung der gesperrten Seiten erreicht man
+dort über „Gesperrte Seiten ›" (oder „Training öffnen" im Sperrbildschirm).
 
-- **Kniebeugen, Klimmzüge, Rückenheber** werden über den Beschleunigungssensor
-  gezählt, **Liegestütze** durch Antippen des Bildschirms.
-- **Jede Wiederholung bringt 1 Sekunde Guthaben** für gesperrte Seiten.
-- Das Guthaben **verfällt täglich um Mitternacht**.
-- Ansicht „Zahl" oder „Bilder": In der Bilder-Ansicht erscheint alle 10
-  Wiederholungen ein zufälliges **eigenes Bild**. Bilder lassen sich im Training
-  hinzufügen und einzeln (antippen) oder alle löschen; sie werden in den
-  App-Speicher kopiert.
-- Ton: kein Ton, Standard-Ton pro Wiederholung oder **eigene Lieder**. Lieder
-  werden in die App hochgeladen und aus der Liste gewählt (antippen); „x“
-  löscht ein Lied. Die Musik läuft, solange Wiederholungen kommen, pausiert nach
-  5 Sekunden ohne Wiederholung und macht an derselben Stelle weiter. Ist ein Lied
-  zu Ende, wird zufällig das nächste gespeicherte Lied gespielt.
+- **Übung wählen** mit dem Schieberegler unter dem großen Startknopf (wie in
+  nur10). **Kniebeugen, Klimmzüge, Rückenheber** werden über den
+  Beschleunigungssensor gezählt, **Liegestütze** durch Antippen.
+- **Jede Wiederholung bringt 1 Sekunde Guthaben** für gesperrte Seiten. Das
+  Guthaben **verfällt täglich um Mitternacht**.
+- **Ansicht** (Dropdown): „Zahl" oder „Bilder" – alle 10 Wiederholungen
+  erscheint ein zufälliges eigenes Bild. „Bilder verwalten…" öffnet eine Seite
+  zum Hinzufügen und Löschen.
+- **Audio** (Dropdown):
+  - *Ton: fest* – jede 10. Wiederholung ein anderer, fester Ton.
+  - *Ton: Tonleiter* – jede 10. Wiederholung einen Schritt höher in C-Dur,
+    über vier Oktaven, danach wieder von vorn.
+  - *Klavierstück* – jede Wiederholung spielt die nächste Note (Ode an die
+    Freude, Für Elise, Eine kleine Nachtmusik oder eigene Melodien). Eigene
+    Melodien entstehen unter „Melodien bearbeiten…" per Mini-Klaviatur oder als
+    Text (z. B. `E4 F#4/8 G4/2`).
+  - *Eigene Lieder* – laufen, solange Wiederholungen kommen, pausieren nach
+    5 Sekunden, am Liedende kommt zufällig das nächste. „Lieder verwalten…"
+    zum Hochladen, Auswählen und Löschen.
+- **Rückenheber**: Die Übung läuft im Querformat. Zum Testen gibt es zwei
+  Schalter: *Empfindlichkeit Normal/Klein* (zählt um die automatisch
+  gemessene Ruhelage, „Klein" für kleine Ausschläge) und *Ansicht Zahl/Kurve*
+  (Live-Kurve des Sensors mit den Zählschwellen und Markierung jeder
+  Wiederholung).
 - Statistik pro Tag und Monat.
 
 ## APK herunterladen und installieren

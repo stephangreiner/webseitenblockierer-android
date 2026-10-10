@@ -19,18 +19,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var store: BlockStore
-    private lateinit var credit: CreditStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         store = BlockStore(this)
-        credit = CreditStore(this)
-
-        binding.trainingButton.setOnClickListener {
-            startActivity(Intent(this, TrainingActivity::class.java))
-        }
 
         binding.addButton.setOnClickListener {
             val value = binding.siteInput.text.toString()
@@ -61,7 +55,6 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         renderList()
         renderPermissionStatus()
-        binding.creditBalance.text = getString(R.string.credit_balance, credit.balance())
     }
 
     private fun renderPermissionStatus() {

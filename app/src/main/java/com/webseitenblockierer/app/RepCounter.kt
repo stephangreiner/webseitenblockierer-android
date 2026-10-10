@@ -3,9 +3,11 @@ package com.webseitenblockierer.app
 /**
  * Port of nur10's accelerometer rep detection.
  *
- * The sensor value is sorted into three zones (low < [LOW], high > [HIGH], mid
- * in between). Only a fresh entry into low/high — after passing through mid —
- * is an edge, and edges closer than [DEBOUNCE_MS] are ignored.
+ * The sensor value is sorted into three zones (low < [low], high > [high], mid
+ * in between). The thresholds default to nur10's fixed values and can be moved,
+ * e.g. around a measured resting position for small movements.
+ * Only a fresh entry into low/high — after passing through mid — is an edge,
+ * and edges closer than [DEBOUNCE_MS] are ignored.
  *  - Squats: low arms the counter, the next high (standing up) counts the rep.
  *  - Pull-ups / back extensions: high arms the counter, the next low counts.
  */
@@ -21,6 +23,9 @@ class RepCounter(
         const val DEBOUNCE_MS = 250L
     }
 
+    var low = LOW
+    var high = HIGH
+
     private var zone = Zone.MID
     private var needsMidCrossing = false
     private var armed = false
@@ -28,8 +33,8 @@ class RepCounter(
 
     fun onValue(value: Float, now: Long) {
         val next = when {
-            value < LOW -> Zone.LOW
-            value > HIGH -> Zone.HIGH
+            value < low -> Zone.LOW
+            value > high -> Zone.HIGH
             else -> Zone.MID
         }
         if (next == zone) return

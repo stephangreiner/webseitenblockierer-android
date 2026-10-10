@@ -2,8 +2,8 @@ package com.webseitenblockierer.app
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -20,25 +20,21 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import java.util.Locale
 
 /**
- * nur10 inside the blocker: count exercise reps (squats, pull-ups and back
- * extensions via the accelerometer, push-ups by tapping). Every rep earns one
- * second of credit that can be spent on a blocked website.
+ * Start screen of the app — nur10 inside the blocker: count exercise reps
+ * (squats, pull-ups and back extensions via the accelerometer, push-ups by
+ * tapping). Every rep earns one second of credit for a blocked website.
  */
 class TrainingActivity : AppCompatActivity(), SensorEventListener {
 
@@ -47,21 +43,29 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         private const val KEY_EXERCISE = "uebung"
         private const val KEY_PICTURES = "bilderansicht"
         private const val KEY_SOUND = "tonmodus"
+        private const val KEY_PIECE = "stueck"
         private const val KEY_PUSHUP_NOTE = "liegestuetzton"
-
-        private val BACKGROUND = Color.rgb(15, 18, 28)
-        private val SURFACE = Color.rgb(24, 29, 42)
-        private val TEXT = Color.argb(242, 255, 255, 255)
-        private val TEXT_DIM = Color.argb(184, 223, 228, 242)
+        private const val KEY_RH_SMALL = "rueckenheber_klein"
+        private const val KEY_RH_CURVE = "rueckenheber_kurve"
 
         private const val SOUND_OFF = "aus"
-        private const val SOUND_SYNTH = "standard"
+        private const val SOUND_FIXED = "fest"
+        private const val SOUND_SCALE = "tonleiter"
+        private const val SOUND_PIECE = "stueck"
         private const val SOUND_MUSIC = "lieder"
+        private val SOUND_MODES =
+            listOf(SOUND_OFF, SOUND_FIXED, SOUND_SCALE, SOUND_PIECE, SOUND_MUSIC)
 
         /** Push-up note choices: base note and the "every 10th" note above it. */
         private val PUSHUP_NOTES = listOf(
             "C" to "D", "D" to "E", "E" to "F", "F" to "G", "G" to "A", "A" to "B", "B" to "C"
         )
+
+        // Back extensions: thresholds around a slowly tracked resting position.
+        private const val RH_DELTA_NORMAL = 2.0f
+        private const val RH_DELTA_SMALL = 0.7f
+        private const val RH_SMOOTH_TAU = 0.06f   // s, removes sensor jitter
+        private const val RH_BASELINE_TAU = 5f    // s, follows the resting position
     }
 
     private lateinit var credit: CreditStore
@@ -69,6 +73,7 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var images: ImageStore
     private lateinit var songs: SongStore
     private lateinit var music: MusicPlayer
+    private lateinit var melodies: MelodyStore
     private val synth = SynthPlayer()
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -79,51 +84,42 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     // Settings
     private var exercise = Exercise.KNIEBEUGEN
     private var pictureView = false
-    private var sound = SOUND_SYNTH
+    private var sound = SOUND_FIXED
+    private var piece = "b:0"
     private var pushupNote = 0
+    private var rhSmall = false
+    private var rhCurve = false
 
     // Session state
     private var active = false
     private var count = 0
     private var startedAt = 0L
     private var counter: RepCounter? = null
+    private var pieceNotes: List<Note> = emptyList()
+    private var smoothed = Float.NaN
+    private var baseline = Float.NaN
+    private var lastSampleNanos = 0L
 
     // Setup views
     private lateinit var setupRoot: View
     private lateinit var creditLabel: TextView
-    private lateinit var startButton: Button
-    private val exerciseButtons = mutableMapOf<Exercise, ImageView>()
-    private lateinit var imageSection: LinearLayout
-    private lateinit var imageInfo: TextView
-    private lateinit var thumbRow: LinearLayout
-    private lateinit var songSection: LinearLayout
-    private lateinit var songList: LinearLayout
+    private lateinit var startButton: LinearLayout
+    private lateinit var startIcon: ImageView
+    private lateinit var startLabel: TextView
+    private lateinit var pieceSpinner: Spinner
+    private var pieceKeys: List<String> = emptyList()
 
     // Active views
     private lateinit var activeRoot: FrameLayout
     private lateinit var backgroundImage: ImageView
+    private lateinit var graph: SensorGraphView
     private lateinit var countText: TextView
     private lateinit var timerText: TextView
     private lateinit var activeCredit: TextView
     private lateinit var noteSpinner: Spinner
-
-    private val pickImages =
-        registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-            val added = uris.count { images.add(it) }
-            if (uris.isNotEmpty() && added < uris.size) {
-                Toast.makeText(this, R.string.image_add_failed, Toast.LENGTH_SHORT).show()
-            }
-            renderImages()
-        }
-
-    private val pickSongs =
-        registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-            val added = uris.count { songs.add(it) }
-            if (uris.isNotEmpty() && added < uris.size) {
-                Toast.makeText(this, R.string.song_add_failed, Toast.LENGTH_SHORT).show()
-            }
-            renderSongs()
-        }
+    private lateinit var rhControls: LinearLayout
+    private lateinit var rhSmallButton: Button
+    private lateinit var rhCurveButton: Button
 
     private val timerTick = object : Runnable {
         override fun run() {
@@ -140,19 +136,23 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         stats = ExerciseStats(this)
         images = ImageStore(this)
         songs = SongStore(this)
-        music = MusicPlayer(this, songs).apply { onSongChanged = { renderSongs() } }
+        music = MusicPlayer(this, songs)
+        melodies = MelodyStore(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         exercise = Exercise.fromKey(prefs.getString(KEY_EXERCISE, null))
         pictureView = prefs.getBoolean(KEY_PICTURES, false)
-        sound = prefs.getString(KEY_SOUND, SOUND_SYNTH) ?: SOUND_SYNTH
+        sound = prefs.getString(KEY_SOUND, null)?.takeIf { it in SOUND_MODES } ?: SOUND_FIXED
+        piece = prefs.getString(KEY_PIECE, "b:0") ?: "b:0"
         pushupNote = prefs.getInt(KEY_PUSHUP_NOTE, 0).coerceIn(0, PUSHUP_NOTES.size - 1)
+        rhSmall = prefs.getBoolean(KEY_RH_SMALL, false)
+        rhCurve = prefs.getBoolean(KEY_RH_CURVE, false)
 
         setupRoot = buildSetupView()
         activeRoot = buildActiveView()
         val root = FrameLayout(this).apply {
-            setBackgroundColor(BACKGROUND)
+            setBackgroundColor(Ui.BACKGROUND)
             addView(setupRoot)
             addView(activeRoot)
         }
@@ -169,6 +169,11 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
     override fun onResume() {
         super.onResume()
         if (active && exercise.usesSensor) registerSensor()
+        if (!active) {
+            // Songs or melodies may have been changed on their own screens.
+            music.release()
+            renderPieces()
+        }
         refreshCredit()
     }
 
@@ -192,139 +197,105 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(24), dp(20), dp(24))
+            setPadding(dp(20), dp(16), dp(20), dp(24))
         }
 
-        column.addView(TextView(this).apply {
-            text = getString(R.string.training_title)
-            setTextColor(TEXT)
-            textSize = 22f
-            gravity = Gravity.CENTER
-        })
-
+        // Top row: credit and the way to the website blocker.
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(16))
+        }
         creditLabel = TextView(this).apply {
-            setTextColor(TEXT_DIM)
+            setTextColor(Ui.TEXT_DIM)
             textSize = 15f
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(16))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        column.addView(creditLabel)
+        top.addView(creditLabel)
+        top.addView(TextView(this).apply {
+            text = getString(R.string.blocker_link)
+            setTextColor(Ui.ACCENT)
+            textSize = 15f
+            setPadding(dp(8), dp(8), 0, dp(8))
+            setOnClickListener {
+                startActivity(Intent(this@TrainingActivity, MainActivity::class.java))
+            }
+        })
+        column.addView(top, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
 
-        startButton = Button(this).apply {
-            textSize = 22f
+        // Big start button with the exercise picture, as in nur10.
+        startIcon = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(170), dp(170))
+        }
+        startLabel = TextView(this).apply {
             setTextColor(Color.BLACK)
-            layoutParams = LinearLayout.LayoutParams(dp(220), dp(220))
+            textSize = 20f
+            gravity = Gravity.CENTER
+        }
+        startButton = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(dp(240), dp(240))
+            isClickable = true
+            addView(startIcon)
+            addView(startLabel)
             setOnClickListener { startSession() }
         }
         column.addView(startButton)
 
-        // Exercise picker (replaces nur10's slider).
-        val exerciseRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(16), 0, dp(8))
-        }
-        for (ex in Exercise.values()) {
-            val icon = ImageView(this).apply {
-                setImageResource(ex.iconRes)
-                contentDescription = ex.label
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)).apply {
-                    leftMargin = dp(4); rightMargin = dp(4)
-                }
-                setOnClickListener {
-                    exercise = ex
-                    prefs.edit().putString(KEY_EXERCISE, ex.key).apply()
+        // Slider to switch between the four exercises, as in nur10.
+        column.addView(SeekBar(this).apply {
+            max = Exercise.values().size - 1
+            progress = exercise.ordinal
+            layoutParams = LinearLayout.LayoutParams(dp(260), ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(20); bottomMargin = dp(12) }
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                    exercise = Exercise.values()[value]
+                    prefs.edit().putString(KEY_EXERCISE, exercise.key).apply()
                     renderExercise()
                 }
-            }
-            exerciseButtons[ex] = icon
-            exerciseRow.addView(icon)
-        }
-        column.addView(exerciseRow)
 
-        // View: number only or with pictures.
-        column.addView(sectionLabel(getString(R.string.view_label)))
-        column.addView(RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
-            val number = radio(getString(R.string.view_number))
-            val pictures = radio(getString(R.string.view_pictures))
-            addView(number)
-            addView(pictures)
-            check(if (pictureView) pictures.id else number.id)
-            setOnCheckedChangeListener { _, id ->
-                pictureView = id == pictures.id
-                prefs.edit().putBoolean(KEY_PICTURES, pictureView).apply()
-                renderImages()
-            }
+                override fun onStartTrackingTouch(bar: SeekBar?) {}
+                override fun onStopTrackingTouch(bar: SeekBar?) {}
+            })
         })
 
-        imageSection = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        val imageButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        imageButtons.addView(Button(this).apply {
-            text = getString(R.string.image_add)
-            setOnClickListener { pickImages.launch("image/*") }
-        })
-        imageButtons.addView(Button(this).apply {
-            text = getString(R.string.image_delete_all)
-            setOnClickListener {
-                if (images.list().isEmpty()) return@setOnClickListener
-                AlertDialog.Builder(this@TrainingActivity)
-                    .setMessage(R.string.image_delete_all_confirm)
-                    .setPositiveButton(R.string.delete) { _, _ ->
-                        images.clear()
-                        renderImages()
-                    }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
-            }
-        })
-        imageSection.addView(imageButtons)
-        imageInfo = TextView(this).apply {
-            setTextColor(TEXT_DIM)
-            textSize = 13f
-        }
-        imageSection.addView(imageInfo)
-        thumbRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        imageSection.addView(HorizontalScrollView(this).apply { addView(thumbRow) })
-        column.addView(imageSection)
-
-        // Sound.
-        column.addView(sectionLabel(getString(R.string.sound_label)))
-        column.addView(RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
-            val modes = listOf(
-                SOUND_OFF to radio(getString(R.string.sound_off)),
-                SOUND_SYNTH to radio(getString(R.string.sound_on)),
-                SOUND_MUSIC to radio(getString(R.string.sound_music))
-            )
-            modes.forEach { addView(it.second) }
-            check((modes.firstOrNull { it.first == sound } ?: modes[1]).second.id)
-            setOnCheckedChangeListener { _, id ->
-                sound = modes.first { it.second.id == id }.first
-                prefs.edit().putString(KEY_SOUND, sound).apply()
-                renderSongs()
-            }
+        // Picture dropdown: number / pictures / manage pictures.
+        column.addView(dropdownRow(
+            getString(R.string.view_label),
+            listOf(getString(R.string.view_number), getString(R.string.view_pictures),
+                getString(R.string.images_manage)),
+            if (pictureView) 1 else 0,
+            manageIndex = 2,
+            onManage = { startActivity(Intent(this, ImagesActivity::class.java)) }
+        ) { pos ->
+            pictureView = pos == 1
+            prefs.edit().putBoolean(KEY_PICTURES, pictureView).apply()
         })
 
-        songSection = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        songSection.addView(Button(this).apply {
-            text = getString(R.string.song_add)
-            setOnClickListener { pickSongs.launch("audio/*") }
+        // Audio dropdown: off / tones / piano piece / own songs / manage songs.
+        column.addView(dropdownRow(
+            getString(R.string.sound_label),
+            listOf(getString(R.string.sound_off), getString(R.string.sound_fixed),
+                getString(R.string.sound_scale), getString(R.string.sound_piece),
+                getString(R.string.sound_music), getString(R.string.songs_manage)),
+            SOUND_MODES.indexOf(sound),
+            manageIndex = SOUND_MODES.size,
+            onManage = { startActivity(Intent(this, SongsActivity::class.java)) }
+        ) { pos ->
+            sound = SOUND_MODES[pos]
+            prefs.edit().putString(KEY_SOUND, sound).apply()
+            renderPieces()
         })
-        songList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        songSection.addView(songList)
-        column.addView(songSection)
+
+        // Piano piece dropdown, only for "Klavierstück".
+        pieceSpinner = Spinner(this)
+        column.addView(labeledRow(getString(R.string.piece_label), pieceSpinner))
 
         column.addView(Button(this).apply {
             text = getString(R.string.stats_button)
@@ -342,103 +313,110 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
+    /**
+     * A labelled dropdown. Choosing [manageIndex] opens a management screen via
+     * [onManage] and keeps the previous choice selected.
+     */
+    private fun dropdownRow(
+        label: String,
+        entries: List<String>,
+        selected: Int,
+        manageIndex: Int,
+        onManage: () -> Unit,
+        onSelect: (Int) -> Unit
+    ): View {
+        val spinner = Spinner(this)
+        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, entries)
+        var current = selected.coerceIn(0, entries.size - 1)
+        spinner.setSelection(current, false)
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos == manageIndex) {
+                    spinner.setSelection(current, false)
+                    onManage()
+                } else if (pos != current) {
+                    current = pos
+                    onSelect(pos)
+                }
+            }
+
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        return labeledRow(label, spinner)
+    }
+
+    private fun labeledRow(label: String, spinner: Spinner) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(6), 0, dp(6))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        addView(TextView(this@TrainingActivity).apply {
+            text = label
+            setTextColor(Ui.TEXT_DIM)
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(dp(110), ViewGroup.LayoutParams.WRAP_CONTENT)
+        })
+        spinner.background = Ui.rounded(Color.argb(40, 255, 255, 255), dp(8).toFloat())
+        addView(spinner, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    /** Fill the piece dropdown: built-in pieces, own melodies, "Melodien bearbeiten…". */
+    private fun renderPieces() {
+        val row = pieceSpinner.parent as View
+        row.visibility = if (sound == SOUND_PIECE) View.VISIBLE else View.GONE
+
+        val userNames = melodies.names()
+        pieceKeys = Melody.BUILT_IN.indices.map { "b:$it" } + userNames.map { "u:$it" }
+        val labels = Melody.BUILT_IN.map { it.first } + userNames.map { "♪ $it" } +
+            getString(R.string.melody_edit)
+        if (piece !in pieceKeys) piece = "b:0"
+
+        pieceSpinner.onItemSelectedListener = null
+        pieceSpinner.adapter =
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+        pieceSpinner.setSelection(pieceKeys.indexOf(piece), false)
+        pieceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos >= pieceKeys.size) {
+                    pieceSpinner.setSelection(pieceKeys.indexOf(piece), false)
+                    val intent = Intent(this@TrainingActivity, MelodyActivity::class.java)
+                    if (piece.startsWith("u:")) {
+                        intent.putExtra(MelodyActivity.EXTRA_NAME, piece.removePrefix("u:"))
+                    }
+                    startActivity(intent)
+                } else {
+                    piece = pieceKeys[pos]
+                    prefs.edit().putString(KEY_PIECE, piece).apply()
+                }
+            }
+
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+    }
+
+    private fun loadPieceNotes(): List<Note> {
+        val text = when {
+            piece.startsWith("b:") ->
+                Melody.BUILT_IN.getOrNull(piece.removePrefix("b:").toIntOrNull() ?: 0)?.second
+            else -> melodies.get(piece.removePrefix("u:"))
+        } ?: return emptyList()
+        return Melody.parse(text).notes
+    }
+
     private fun showSetup() {
         setupRoot.visibility = View.VISIBLE
         activeRoot.visibility = View.GONE
         renderExercise()
-        renderImages()
-        renderSongs()
+        renderPieces()
         refreshCredit()
     }
 
     private fun renderExercise() {
-        startButton.text = getString(R.string.start_button, exercise.label)
-        startButton.background = rounded(exercise.color, dp(24).toFloat())
-        exerciseButtons.forEach { (ex, view) ->
-            view.background = rounded(
-                if (ex == exercise) ex.color else SURFACE, dp(12).toFloat()
-            )
-        }
-    }
-
-    private fun renderImages() {
-        imageSection.visibility = if (pictureView) View.VISIBLE else View.GONE
-        val files = images.list()
-        imageInfo.text = if (files.isEmpty()) {
-            getString(R.string.image_info_empty)
-        } else {
-            resources.getQuantityString(R.plurals.image_info_count, files.size, files.size)
-        }
-        thumbRow.removeAllViews()
-        for (file in files) {
-            thumbRow.addView(ImageView(this).apply {
-                setImageBitmap(ImageStore.decode(file, dp(72), dp(72)))
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                layoutParams = LinearLayout.LayoutParams(dp(72), dp(72)).apply {
-                    rightMargin = dp(6); topMargin = dp(6)
-                }
-                // Tap a thumbnail to remove just that picture.
-                setOnClickListener {
-                    AlertDialog.Builder(this@TrainingActivity)
-                        .setMessage(R.string.image_delete_one_confirm)
-                        .setPositiveButton(R.string.delete) { _, _ ->
-                            images.remove(file)
-                            renderImages()
-                        }
-                        .setNegativeButton(R.string.cancel, null)
-                        .show()
-                }
-            })
-        }
-    }
-
-    private fun renderSongs() {
-        songSection.visibility = if (sound == SOUND_MUSIC) View.VISIBLE else View.GONE
-        songList.removeAllViews()
-        val files = songs.list()
-        if (files.isEmpty()) {
-            songList.addView(TextView(this).apply {
-                text = getString(R.string.song_info_empty)
-                setTextColor(TEXT_DIM)
-                textSize = 13f
-            })
-            return
-        }
-        val current = music.currentSong()
-        for (file in files) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            row.addView(TextView(this).apply {
-                val selected = file == current
-                text = (if (selected) "▶ " else "") + SongStore.title(file)
-                setTextColor(if (selected) Exercise.LIEGESTUETZE.color else TEXT)
-                textSize = 15f
-                setPadding(0, dp(10), dp(8), dp(10))
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                // Tap a title to make it the current song.
-                setOnClickListener {
-                    music.select(file.name)
-                    renderSongs()
-                }
-            })
-            row.addView(Button(this).apply {
-                text = "x"
-                setOnClickListener {
-                    AlertDialog.Builder(this@TrainingActivity)
-                        .setMessage(getString(R.string.song_delete_confirm, SongStore.title(file)))
-                        .setPositiveButton(R.string.delete) { _, _ ->
-                            if (file == music.currentSong()) music.release()
-                            songs.remove(file)
-                            renderSongs()
-                        }
-                        .setNegativeButton(R.string.cancel, null)
-                        .show()
-                }
-            })
-            songList.addView(row)
-        }
+        startIcon.setImageResource(exercise.iconRes)
+        startLabel.text = getString(R.string.start_button, exercise.label)
+        startButton.background = Ui.rounded(exercise.color, dp(24).toFloat())
     }
 
     // =====================================================================
@@ -450,60 +428,72 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
 
         backgroundImage = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            )
         }
-        frame.addView(backgroundImage)
+        frame.addView(backgroundImage, matchParent())
+
+        graph = SensorGraphView(this).apply { setBackgroundColor(Ui.BACKGROUND) }
+        frame.addView(graph, matchParent())
 
         countText = TextView(this).apply {
-            textSize = 120f
             setTextColor(Color.BLACK)
             gravity = Gravity.CENTER
             setShadowLayer(12f, 0f, 0f, Color.WHITE)
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            )
             // Push-ups: tap anywhere (nose on the screen) to count.
             setOnClickListener { if (!exercise.usesSensor) countRep() }
         }
-        frame.addView(countText)
+        frame.addView(countText, matchParent())
 
         timerText = TextView(this).apply {
             setTextColor(Color.BLACK)
             textSize = 20f
             setPadding(dp(16), dp(16), dp(16), dp(16))
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.START
-            )
         }
-        frame.addView(timerText)
+        frame.addView(timerText, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.START
+        ))
 
         frame.addView(Button(this).apply {
             text = "x"
             textSize = 20f
             setTextColor(Color.WHITE)
-            background = rounded(Color.argb(170, 0, 0, 0), dp(24).toFloat())
-            layoutParams = FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END)
-                .apply { topMargin = dp(12); rightMargin = dp(12) }
+            background = Ui.rounded(Color.argb(170, 0, 0, 0), dp(24).toFloat())
             setOnClickListener { stopSession() }
+        }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(12); rightMargin = dp(12)
         })
 
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), dp(16), dp(16), dp(24))
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM
-            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
         }
+
+        // Back extension test switches: sensitivity and number/curve view.
+        rhControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(8))
+        }
+        rhSmallButton = smallButton {
+            rhSmall = !rhSmall
+            prefs.edit().putBoolean(KEY_RH_SMALL, rhSmall).apply()
+            renderRhControls()
+        }
+        rhCurveButton = smallButton {
+            rhCurve = !rhCurve
+            prefs.edit().putBoolean(KEY_RH_CURVE, rhCurve).apply()
+            renderRhControls()
+        }
+        rhControls.addView(rhSmallButton)
+        rhControls.addView(rhCurveButton)
+        bottom.addView(rhControls)
+
         activeCredit = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 16f
             setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = rounded(Color.argb(170, 0, 0, 0), dp(16).toFloat())
+            background = Ui.rounded(Color.argb(170, 0, 0, 0), dp(16).toFloat())
         }
         bottom.addView(activeCredit)
 
@@ -514,10 +504,7 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
                 PUSHUP_NOTES.map { it.first }
             )
             setSelection(pushupNote)
-            background = rounded(Color.argb(170, 255, 255, 255), dp(8).toFloat())
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(8) }
+            background = Ui.rounded(Color.argb(170, 255, 255, 255), dp(8).toFloat())
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                     pushupNote = pos
@@ -527,11 +514,32 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
-        bottom.addView(noteSpinner)
-        frame.addView(bottom)
+        bottom.addView(noteSpinner, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(8) })
 
+        frame.addView(bottom, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM
+        ))
         return frame
     }
+
+    private fun smallButton(onClick: () -> Unit) = Button(this).apply {
+        textSize = 13f
+        isAllCaps = false
+        setTextColor(Color.WHITE)
+        background = Ui.rounded(Color.argb(170, 0, 0, 0), dp(16).toFloat())
+        setPadding(dp(14), 0, dp(14), 0)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)
+        ).apply { leftMargin = dp(4); rightMargin = dp(4) }
+        setOnClickListener { onClick() }
+    }
+
+    private fun matchParent() = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    )
 
     private fun startSession() {
         if (exercise.usesSensor && accelerometer == null) {
@@ -542,15 +550,26 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         count = 0
         startedAt = SystemClock.elapsedRealtime()
         counter = RepCounter(squatStyle = exercise == Exercise.KNIEBEUGEN) { countRep() }
+        pieceNotes = if (sound == SOUND_PIECE) loadPieceNotes() else emptyList()
+        smoothed = Float.NaN
+        baseline = Float.NaN
+        lastSampleNanos = 0L
+        graph.clear()
 
         setupRoot.visibility = View.GONE
         activeRoot.visibility = View.VISIBLE
         activeRoot.setBackgroundColor(exercise.color)
         backgroundImage.setImageDrawable(null)
-        noteSpinner.visibility = if (exercise.usesSensor) View.GONE else View.VISIBLE
+        noteSpinner.visibility =
+            if (!exercise.usesSensor && sound == SOUND_FIXED) View.VISIBLE else View.GONE
+        renderRhControls()
         renderCount()
         refreshCredit()
 
+        // Back extensions: the phone is held sideways, so show the session in landscape.
+        if (exercise == Exercise.RUECKENHEBER) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
         // Keep the screen on while training, like nur10's wake lock.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (exercise.usesSensor) registerSensor()
@@ -563,9 +582,29 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
         handler.removeCallbacks(timerTick)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         backgroundImage.setImageDrawable(null)
         music.pause()
         showSetup()
+    }
+
+    /** Back-extension switches are only shown for that exercise. */
+    private fun renderRhControls() {
+        val rh = exercise == Exercise.RUECKENHEBER
+        rhControls.visibility = if (rh) View.VISIBLE else View.GONE
+        rhSmallButton.text = getString(
+            if (rhSmall) R.string.rh_sensitivity_small else R.string.rh_sensitivity_normal
+        )
+        rhCurveButton.text = getString(if (rhCurve) R.string.rh_view_curve else R.string.rh_view_number)
+
+        val curve = rh && rhCurve
+        graph.visibility = if (curve) View.VISIBLE else View.GONE
+        // In the curve view the count moves to the top so the graph stays readable.
+        countText.textSize = if (curve) 40f else 120f
+        countText.gravity = if (curve) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.CENTER
+        countText.setPadding(0, if (curve) dp(8) else 0, 0, 0)
+        countText.setTextColor(if (curve) Color.WHITE else Color.BLACK)
+        countText.setShadowLayer(12f, 0f, 0f, if (curve) Color.BLACK else Color.WHITE)
     }
 
     private fun registerSensor() {
@@ -576,8 +615,33 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent) {
         val axis = exercise.axis ?: return
+        val counter = counter ?: return
         if (!active) return
-        counter?.onValue(event.values[axis], SystemClock.elapsedRealtime())
+        val value = event.values[axis]
+        val now = SystemClock.elapsedRealtime()
+
+        if (exercise != Exercise.RUECKENHEBER) {
+            counter.onValue(value, now)
+            return
+        }
+
+        // Back extensions: the phone moves only a little while lying on the belly
+        // and is held at an angle, so count around the measured resting position.
+        val dt = if (lastSampleNanos == 0L) 0.02f
+        else ((event.timestamp - lastSampleNanos) / 1e9f).coerceIn(0.001f, 0.2f)
+        lastSampleNanos = event.timestamp
+        if (smoothed.isNaN()) {
+            smoothed = value
+            baseline = value
+        }
+        smoothed += (value - smoothed) * (dt / (RH_SMOOTH_TAU + dt))
+        baseline += (smoothed - baseline) * (dt / (RH_BASELINE_TAU + dt))
+
+        val delta = if (rhSmall) RH_DELTA_SMALL else RH_DELTA_NORMAL
+        counter.low = baseline - delta
+        counter.high = baseline + delta
+        counter.onValue(smoothed, now)
+        if (rhCurve) graph.addSample(smoothed, baseline, counter.low, counter.high)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -588,21 +652,43 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         count += 1
         stats.increment(exercise)
         credit.add(1)
+        if (exercise == Exercise.RUECKENHEBER) graph.markRep()
 
-        if (sound == SOUND_MUSIC) music.onRep()
-        if (sound == SOUND_SYNTH) {
-            val tenth = count % 10 == 0
-            if (exercise.usesSensor) {
-                synth.play(if (tenth) "C" else "E", 4, 0.5f)
-            } else {
-                val (base, high) = PUSHUP_NOTES[pushupNote]
-                synth.play(if (tenth) high else base, 4, 1f)
-            }
-        }
+        playRepSound()
         if (pictureView && count % 10 == 0) showRandomImage()
 
         renderCount()
         refreshCredit()
+    }
+
+    private fun playRepSound() {
+        val tenth = count % 10 == 0
+        when (sound) {
+            SOUND_MUSIC -> music.onRep()
+            SOUND_FIXED -> {
+                if (exercise.usesSensor) {
+                    synth.play(if (tenth) "C" else "E", 4, 0.5f)
+                } else {
+                    val (base, high) = PUSHUP_NOTES[pushupNote]
+                    synth.play(if (tenth) high else base, 4, 1f)
+                }
+            }
+            SOUND_SCALE -> {
+                // Every 10th rep climbs one step up the C major scale.
+                if (tenth) {
+                    val step = (count / 10 - 1) % Melody.SCALE.size
+                    synth.playMidi(Melody.SCALE[step], 0.7f)
+                } else {
+                    synth.play("E", 4, 0.35f)
+                }
+            }
+            SOUND_PIECE -> {
+                // Every rep plays the next note of the piece, so the tempo of the
+                // reps is the tempo of the music.
+                val note = pieceNotes.getOrNull((count - 1) % pieceNotes.size.coerceAtLeast(1))
+                if (note != null) synth.playMidi(note.midi, note.seconds)
+            }
+        }
     }
 
     private fun showRandomImage() {
@@ -621,33 +707,4 @@ class TrainingActivity : AppCompatActivity(), SensorEventListener {
         creditLabel.text = text
         activeCredit.text = text
     }
-
-    // =====================================================================
-    // Helpers
-    // =====================================================================
-
-    private fun sectionLabel(label: String) = TextView(this).apply {
-        text = label
-        setTextColor(TEXT_DIM)
-        textSize = 13f
-        isAllCaps = true
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(16) }
-    }
-
-    private fun radio(label: String) = RadioButton(this).apply {
-        id = View.generateViewId()
-        text = label
-        setTextColor(TEXT)
-        setPadding(0, 0, dp(16), 0)
-    }
-
-    private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = radius
-    }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
 }

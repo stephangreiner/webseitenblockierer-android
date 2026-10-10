@@ -10,6 +10,15 @@ on:
       - "*.gradle.kts"
       - "gradle.properties"
       - ".github/workflows/android.yml"
+  # Build pull requests too, so compile errors show up before merging.
+  # Only pushes to main publish the release.
+  pull_request:
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
 
 permissions:
@@ -48,6 +57,7 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish APK to a downloadable release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-latest
